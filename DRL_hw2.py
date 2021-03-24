@@ -15,7 +15,7 @@ class DQN(tf.keras.Model):
                       tf.keras.layers.Dense(units = 32, activation = "sigmoid"),
                        tf.keras.layers.Dense(units = 16, activation = "sigmoid"),
                         tf.keras.layers.Dense(units = 2, use_bias = False)]
-        
+
     def __call__(self,inp):
         for layer in self.Layers:
             inp = layer(inp)
@@ -27,7 +27,7 @@ class DQN(tf.keras.Model):
 gamma = 0.95
 
 #use the training method to train the network
-def training(agent, manager, epochs = 1, learning_rate = 0.01):
+def training(agent, manager, epochs = 1, learning_rate = 0.001):
     manager.initilize_buffer(1000)
     #create a buffer to sample from
     optimizer = tf.keras.optimizers.Adam(learning_rate)
@@ -36,7 +36,7 @@ def training(agent, manager, epochs = 1, learning_rate = 0.01):
         data = manager.get_data(True, 1000)
         manager.store_in_buffer(data)
         #sample 64 samples from the buffer repeatedly
-        for i in range(100):            
+        for i in range(100):
             with tf.GradientTape() as tape:
                 sample = manager.sample(64)
                 #extract the necessary values from the samples
@@ -44,15 +44,18 @@ def training(agent, manager, epochs = 1, learning_rate = 0.01):
                 state_new = sample["state_new"]
                 action = sample["action"]
                 rewards = sample["reward"]
-                
+                not_done = sample["not_done"]
+
                 #compute the loss
-                loss =  tf.math.square(rewards + gamma * agent.max_q(state_new) - agent.q_val(state,action))
-                
+                target = rewards + gamma * agent.max_q(state_new)
+                loss = tf.keras.losses.MSE(target, agent.q_val(state,action))
+
                 #compute gradients
                 gradients = tape.gradient(loss, agent.model.trainable_variables)
             #apply gradients
             optimizer.apply_gradients(zip(gradients, agent.model.trainable_variables))
         print("epoch: "+ str(epoch+1))
+    return agent
 
 if __name__ == "__main__":
     #create environment
@@ -71,16 +74,16 @@ if __name__ == "__main__":
     ray.init(log_to_driver=False)
     manager = SampleManager(**kwargs)
     env.reset()
-    agent = manager.get_agent()
-    
+
+
     #train for the number of epochs
-    training(agent,manager,epochs = 30)
+    agent = training(manager.get_agent(),manager,epochs = 30)
 
     #test the trained network
     manager.set_agent(agent.model.get_weights())
     manager.test(
         max_steps=10000,
-        test_episodes=100,
+        test_episodes=20,
         render=True,
         do_print=True,
         evaluation_measure="time_and_reward",
